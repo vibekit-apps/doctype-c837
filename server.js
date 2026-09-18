@@ -25,8 +25,33 @@ const MIME = {
 //     const item = await readBody(req);
 //     json(res, store.write('items', [...store.read('items'), item]), 201);
 //   },
+const store = require('./lib/store');
+
 const routes = {
   'GET /health': (req, res) => json(res, { status: 'ok', uptime: process.uptime() }),
+
+  'GET /api/logs': (req, res) => json(res, store.read('logs')),
+  'POST /api/logs': async (req, res) => {
+    const body = await readBody(req);
+    const title = (body.title || '').trim();
+    if (!title) return json(res, { error: 'Title required' }, 400);
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title,
+      notes: (body.notes || '').trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const logs = store.read('logs');
+    logs.unshift(entry);
+    json(res, store.write('logs', logs), 201);
+  },
+  'GET /api/settings': (req, res) => json(res, store.read('settings', {})),
+  'POST /api/settings': async (req, res) => {
+    const body = await readBody(req);
+    const current = store.read('settings', {});
+    const updated = { ...current, ...body };
+    json(res, store.write('settings', updated));
+  },
 };
 
 function json(res, data, status = 200) {
@@ -102,6 +127,12 @@ http.createServer(async (req, res) => {
   let pathname = req.url || '/';
   try {
     ({ pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`));
+    const delMatch = req.method === 'DELETE' && pathname.match(/^\/api\/logs\/([^/]+)$/);
+    if (delMatch) {
+      const logs = store.read('logs').filter((l) => l.id !== delMatch[1]);
+      json(res, store.write('logs', logs));
+      return;
+    }
     const handler = routes[`${req.method} ${pathname}`];
     if (handler) await handler(req, res);
     else serveStatic(req, res, pathname);

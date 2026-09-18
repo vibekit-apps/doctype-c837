@@ -43,20 +43,116 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferred = e;
-  if (!installed) { card.hidden = false; btn.hidden = false; }
+  if (!installed && card && btn) { card.hidden = false; btn.hidden = false; }
 });
 
-btn.addEventListener('click', async () => {
-  if (!deferred) return;
-  deferred.prompt();
-  await deferred.userChoice;
-  deferred = null;
-  card.hidden = true;
-});
+if (btn) {
+  btn.addEventListener('click', async () => {
+    if (!deferred) return;
+    deferred.prompt();
+    await deferred.userChoice;
+    deferred = null;
+    if (card) card.hidden = true;
+  });
+}
 
 // iOS has no install prompt, so there is nothing for this card to do there.
 // The platform shows the iPhone its own "Add to home screen" hint above the
 // page, so one surface owns that instruction; leave it to the platform.
+
+// ── Daily Log data ─────────────────────────────────────────────────
+document.querySelectorAll('[data-goto]').forEach((el) => {
+  el.addEventListener('click', () => show(el.dataset.goto));
+});
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function fetchLogs() {
+  const res = await fetch('/api/logs');
+  return res.ok ? res.json() : [];
+}
+
+async function renderHome() {
+  const homeDate = document.getElementById('home-date');
+  const homeSummary = document.getElementById('home-summary');
+  if (!homeDate) return;
+  homeDate.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const logs = await fetchLogs();
+  const today = new Date().toDateString();
+  const todayCount = logs.filter((l) => new Date(l.createdAt).toDateString() === today).length;
+  homeSummary.textContent = todayCount
+    ? `${todayCount} ${todayCount === 1 ? 'entry' : 'entries'} logged today.`
+    : 'No entries logged today yet.';
+}
+
+async function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (!list) return;
+  const logs = await fetchLogs();
+  if (!logs.length) {
+    list.innerHTML = '<li><span>No entries yet</span></li>';
+    return;
+  }
+  list.innerHTML = logs.map((l) => `
+    <li>
+      <span>${escapeHtml(l.title)}${l.notes ? `<div class="meta">${escapeHtml(l.notes)}</div>` : ''}</span>
+      <span class="meta">${fmtDate(l.createdAt)}</span>
+    </li>
+  `).join('');
+}
+
+async function renderSummary() {
+  const total = document.getElementById('stat-total');
+  if (!total) return;
+  const logs = await fetchLogs();
+  const now = new Date();
+  const today = now.toDateString();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  document.getElementById('stat-total').textContent = logs.length;
+  document.getElementById('stat-today').textContent = logs.filter((l) => new Date(l.createdAt).toDateString() === today).length;
+  document.getElementById('stat-week').textContent = logs.filter((l) => new Date(l.createdAt) >= weekAgo).length;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+const logForm = document.getElementById('log-form');
+if (logForm) {
+  logForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('log-title').value.trim();
+    const notes = document.getElementById('log-notes').value.trim();
+    if (!title) return;
+    const res = await fetch('/api/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, notes }),
+    });
+    if (res.ok) {
+      logForm.reset();
+      show('history');
+      renderHistory();
+      renderHome();
+      renderSummary();
+    }
+  });
+}
+
+// Refresh data whenever a data-driven tab is shown.
+tabs.forEach((t) => t.addEventListener('click', () => {
+  const name = t.dataset.screen;
+  if (name === 'home') renderHome();
+  if (name === 'history') renderHistory();
+  if (name === 'summary') renderSummary();
+}));
+
+renderHome();
 
 // ── Service worker ─────────────────────────────────────────────────
 // See sw.js: network always wins, the cache is an offline fallback only.
