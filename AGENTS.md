@@ -1,7 +1,7 @@
 # Agent guide
 
 App: **doctype-c837** at https://doctype-c837.vibekit.bot
-Repo: template/mobile
+Repo: vibekit-apps/doctype-c837
 
 ## NEVER (breaks the product)
 - **NEVER point the user at localhost / `npm start`** — only the live URL above. They have no terminal. "Download this?" → open the URL on a phone → Share → **Add to Home Screen**.
